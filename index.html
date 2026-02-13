@@ -3,77 +3,142 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Google Photos Redirect Launcher</title>
+    <title>Isolated Browser Frame</title>
     <style>
       :root { font-family: Inter, Arial, sans-serif; color-scheme: light dark; }
-      body { margin: 0; background: #0f172a; color: #e2e8f0; }
-      .wrap { max-width: 900px; margin: 0 auto; padding: 24px; }
-      .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-      input {
-        flex: 1; min-width: 280px; padding: 12px;
-        border: 1px solid #334155; border-radius: 10px;
-        background: #1e293b; color: #e2e8f0;
-      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #0b1220; color: #e5e7eb; }
+      .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
+      .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 12px; }
+      .toolbar { display: grid; grid-template-columns: auto auto auto 1fr auto; gap: 8px; align-items: center; }
       button {
-        border: 0; border-radius: 10px; padding: 12px 14px;
-        font-weight: 600; cursor: pointer; color: #fff;
+        border: 1px solid #334155; background: #1f2937; color: #e5e7eb;
+        border-radius: 8px; padding: 10px 12px; font-weight: 600; cursor: pointer;
       }
-      .primary { background: #2563eb; }
-      .secondary { background: #475569; }
-      .note { line-height: 1.5; color: #cbd5e1; }
-      .status { margin-top: 12px; color: #fbbf24; }
+      button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+      input[type='url'] {
+        width: 100%; padding: 10px 12px; border-radius: 8px;
+        border: 1px solid #334155; background: #0f172a; color: #e5e7eb;
+      }
+      .status { margin: 10px 0 0; color: #fbbf24; font-size: 14px; line-height: 1.4; }
+      .hint { margin: 12px 0 0; color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+      .viewer { margin-top: 12px; }
+      iframe {
+        width: 100%; min-height: 78vh; border: 1px solid #334155; border-radius: 12px; background: #020617;
+      }
       code { background: #1f2937; padding: 2px 6px; border-radius: 6px; }
     </style>
   </head>
   <body>
-    <main class="wrap">
-      <h1>Google Photos share URL opener</h1>
-      <p class="note">
-        You are correct: this kind of <code>photos.app.goo.gl</code> link typically redirects to another Google Photos URL,
-        and Google blocks reliable in-page iframe embedding for this flow. The only stable approach is
-        top-level navigation (same tab or new tab), which allows Google’s redirect chain to complete.
-      </p>
+    <main class="app">
+      <h1>Browser-in-browser (isolated frame mode)</h1>
+      <div class="panel">
+        <div class="toolbar">
+          <button id="backBtn" type="button">◀ Back</button>
+          <button id="forwardBtn" type="button">▶ Forward</button>
+          <button id="reloadBtn" type="button">↻ Reload</button>
+          <input id="urlInput" type="url" value="https://photos.app.goo.gl/9pnB2PfT848SHpPd9" aria-label="URL" />
+          <button id="goBtn" class="primary" type="button">Go</button>
+        </div>
 
-      <div class="controls">
-        <input id="urlInput" type="url" value="https://photos.app.goo.gl/9pnB2PfT848SHpPd9" aria-label="Google Photos share URL" />
-        <button id="openSameTab" class="primary" type="button">Open in this tab (follow redirect)</button>
-        <button id="openNewTab" class="secondary" type="button">Open in new tab</button>
+        <p id="status" class="status">
+          Isolation is enabled: <code>sandbox</code> + <code>credentialless</code> + <code>no-referrer</code>.
+        </p>
+
+        <p class="hint">
+          This is the strongest browser-native isolation available in normal web pages. It reduces session sharing with your main page,
+          but cannot guarantee a perfect "full incognito browser" clone for all sites. Some websites block iframe embedding
+          (via <code>X-Frame-Options</code> / <code>frame-ancestors</code>) or require top-level navigation.
+        </p>
+
+        <div class="viewer">
+          <iframe
+            id="viewer"
+            title="Isolated web viewer"
+            referrerpolicy="no-referrer"
+            loading="eager"
+            sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-top-navigation-by-user-activation"
+            credentialless
+          ></iframe>
+        </div>
       </div>
-
-      <p id="status" class="status">
-        This page intentionally does not use iframe embedding because Google may block it.
-      </p>
     </main>
 
     <script>
+      const viewer = document.getElementById('viewer');
       const input = document.getElementById('urlInput');
       const status = document.getElementById('status');
 
-      function getValidUrl() {
-        const value = input.value.trim();
+      function normalizeUrl(value) {
+        const raw = value.trim();
+        if (!raw) return null;
+
         try {
-          const u = new URL(value);
-          if (u.protocol !== 'https:') throw new Error('Only HTTPS URLs are allowed.');
-          return u.toString();
+          const url = new URL(raw);
+          if (!['http:', 'https:'].includes(url.protocol)) return null;
+          return url.toString();
         } catch {
-          status.textContent = 'Please enter a valid HTTPS URL.';
-          return null;
+          try {
+            const url = new URL(`https://${raw}`);
+            return url.toString();
+          } catch {
+            return null;
+          }
         }
       }
 
-      document.getElementById('openSameTab').addEventListener('click', () => {
-        const url = getValidUrl();
-        if (!url) return;
-        status.textContent = 'Opening in this tab and letting Google redirect to the album...';
-        window.location.assign(url);
+      function navigate() {
+        const url = normalizeUrl(input.value);
+        if (!url) {
+          status.textContent = 'Invalid URL. Enter a valid http/https URL.';
+          return;
+        }
+
+        input.value = url;
+        viewer.src = url;
+        status.textContent = 'Navigating in isolated frame...';
+      }
+
+      function wireControls() {
+        document.getElementById('goBtn').addEventListener('click', navigate);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') navigate();
+        });
+
+        document.getElementById('backBtn').addEventListener('click', () => {
+          try {
+            viewer.contentWindow.history.back();
+            status.textContent = 'Back requested.';
+          } catch {
+            status.textContent = 'Back not available for this site due to cross-origin isolation rules.';
+          }
+        });
+
+        document.getElementById('forwardBtn').addEventListener('click', () => {
+          try {
+            viewer.contentWindow.history.forward();
+            status.textContent = 'Forward requested.';
+          } catch {
+            status.textContent = 'Forward not available for this site due to cross-origin isolation rules.';
+          }
+        });
+
+        document.getElementById('reloadBtn').addEventListener('click', () => {
+          try {
+            viewer.contentWindow.location.reload();
+          } catch {
+            viewer.src = viewer.src;
+          }
+          status.textContent = 'Reload requested.';
+        });
+      }
+
+      viewer.addEventListener('load', () => {
+        status.textContent = 'Loaded in isolated frame (unless blocked by site embed policy).';
       });
 
-      document.getElementById('openNewTab').addEventListener('click', () => {
-        const url = getValidUrl();
-        if (!url) return;
-        status.textContent = 'Opening in new tab...';
-        window.open(url, '_blank', 'noopener,noreferrer');
-      });
+      wireControls();
+      navigate();
     </script>
   </body>
 </html>
