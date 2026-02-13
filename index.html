@@ -3,42 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smart Isolated Browser</title>
+    <title>Smart Browser Launcher</title>
     <style>
       :root { font-family: Inter, Arial, sans-serif; color-scheme: light dark; }
       * { box-sizing: border-box; }
       body { margin: 0; background: #0b1220; color: #e5e7eb; }
-      .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
+      .app { max-width: 1100px; margin: 0 auto; padding: 16px; }
       .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 12px; }
-      .toolbar { display: grid; grid-template-columns: auto auto auto 1fr auto auto; gap: 8px; align-items: center; }
+      .toolbar { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; }
+      input[type='url'] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e5e7eb; }
       button { border: 1px solid #334155; background: #1f2937; color: #e5e7eb; border-radius: 8px; padding: 10px 12px; font-weight: 600; cursor: pointer; }
       button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-      input[type='url'] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e5e7eb; }
       .status { margin: 10px 0 0; color: #fbbf24; font-size: 14px; line-height: 1.4; }
       .hint { margin: 12px 0 0; color: #cbd5e1; font-size: 14px; line-height: 1.5; }
-      iframe { width: 100%; min-height: 78vh; border: 1px solid #334155; border-radius: 12px; background: #020617; margin-top: 12px; }
+      iframe { width: 100%; min-height: 74vh; border: 1px solid #334155; border-radius: 12px; background: #020617; margin-top: 12px; }
       code { background: #1f2937; padding: 2px 6px; border-radius: 6px; }
     </style>
   </head>
   <body>
     <main class="app">
-      <h1>Smart browser-in-browser (with fallback)</h1>
+      <h1>Smart browser launcher (auto handles X-Frame-Options)</h1>
       <div class="panel">
         <div class="toolbar">
-          <button id="backBtn" type="button">◀ Back</button>
-          <button id="forwardBtn" type="button">▶ Forward</button>
-          <button id="reloadBtn" type="button">↻ Reload</button>
           <input id="urlInput" type="url" value="https://photos.app.goo.gl/9pnB2PfT848SHpPd9" aria-label="URL" />
-          <button id="goBtn" class="primary" type="button">Go</button>
-          <button id="popupBtn" type="button">Open popup shell</button>
+          <button id="goBtn" class="primary" type="button">Open</button>
+          <button id="tabBtn" type="button">Open in new tab</button>
+          <button id="frameBtn" type="button">Force iframe</button>
         </div>
 
         <p id="status" class="status">Ready.</p>
 
         <p class="hint">
-          This page now actively handles iframe blocking: it first tries isolated frame mode,
-          then auto-falls back to a popup shell when likely blocked. Isolation used: <code>sandbox</code> +
-          <code>credentialless</code> + <code>no-referrer</code>.
+          If a site sends <code>X-Frame-Options: sameorigin</code> (like Google Photos share links), iframe loading is impossible.
+          This app now detects known blocked hosts and automatically uses top-level navigation so the URL actually opens.
         </p>
 
         <iframe
@@ -56,98 +53,86 @@
       const viewer = document.getElementById('viewer');
       const input = document.getElementById('urlInput');
       const status = document.getElementById('status');
-      let navTimer = null;
-      let lastUrl = '';
+
+      const knownFrameBlockedHosts = new Set([
+        'photos.app.goo.gl',
+        'photos.google.com',
+        'accounts.google.com'
+      ]);
 
       function normalizeUrl(value) {
         const raw = value.trim();
         if (!raw) return null;
         try {
-          const url = new URL(raw);
-          if (!['http:', 'https:'].includes(url.protocol)) return null;
-          return url.toString();
+          const u = new URL(raw);
+          if (!['http:', 'https:'].includes(u.protocol)) return null;
+          return u;
         } catch {
           try {
-            return new URL(`https://${raw}`).toString();
+            return new URL(`https://${raw}`);
           } catch {
             return null;
           }
         }
       }
 
-      function openPopupShell(url) {
-        const popup = window.open('', '_blank', 'noopener,noreferrer,width=1300,height=900');
-        if (!popup) {
-          status.textContent = 'Popup blocked by browser. Please allow popups and try again.';
+      function openTopLevel(url, sameTab = false) {
+        if (sameTab) {
+          status.textContent = 'Opening in this tab (real browser navigation with redirects).';
+          window.location.assign(url.toString());
           return;
         }
-
-        popup.document.write(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Isolated popup shell</title>
-<style>body{margin:0;background:#0b1220;color:#e5e7eb;font-family:Inter,Arial,sans-serif}header{padding:10px 12px;background:#111827;border-bottom:1px solid #334155}iframe{width:100%;height:calc(100vh - 44px);border:0;background:#020617}code{background:#1f2937;padding:2px 6px;border-radius:6px}</style>
-</head><body>
-<header>Popup shell mode (isolated frame): <code>${url.replace(/</g, '&lt;')}</code></header>
-<iframe referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-top-navigation-by-user-activation" credentialless src="${url.replace(/"/g, '&quot;')}"></iframe>
-</body></html>`);
-        popup.document.close();
-
-        status.textContent = 'Opened popup shell fallback.';
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        status.textContent = 'Opened in new tab using top-level navigation.';
       }
 
-      function navigate() {
+      function openSmart() {
         const url = normalizeUrl(input.value);
         if (!url) {
           status.textContent = 'Invalid URL. Enter a valid http/https URL.';
           return;
         }
 
-        input.value = url;
-        lastUrl = url;
-        viewer.src = url;
-        status.textContent = 'Trying isolated frame...';
+        input.value = url.toString();
 
-        clearTimeout(navTimer);
-        navTimer = setTimeout(() => {
-          // If still not loaded after timeout, likely blocked/redirect loop/slow.
-          status.textContent = 'Likely blocked in iframe. Auto-switching to popup shell fallback...';
-          openPopupShell(url);
-        }, 4500);
+        if (knownFrameBlockedHosts.has(url.hostname)) {
+          status.textContent = `${url.hostname} is frame-blocked; opening as real tab instead.`;
+          openTopLevel(url, false);
+          return;
+        }
+
+        viewer.src = url.toString();
+        status.textContent = 'Trying isolated iframe mode...';
       }
 
-      document.getElementById('goBtn').addEventListener('click', navigate);
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') navigate(); });
-
-      document.getElementById('backBtn').addEventListener('click', () => {
-        try { viewer.contentWindow.history.back(); status.textContent = 'Back requested.'; }
-        catch { status.textContent = 'Back unavailable cross-origin; use popup shell.'; }
-      });
-
-      document.getElementById('forwardBtn').addEventListener('click', () => {
-        try { viewer.contentWindow.history.forward(); status.textContent = 'Forward requested.'; }
-        catch { status.textContent = 'Forward unavailable cross-origin; use popup shell.'; }
-      });
-
-      document.getElementById('reloadBtn').addEventListener('click', () => {
-        try { viewer.contentWindow.location.reload(); }
-        catch { if (lastUrl) viewer.src = lastUrl; }
-        status.textContent = 'Reload requested.';
-      });
-
-      document.getElementById('popupBtn').addEventListener('click', () => {
+      function forceFrame() {
         const url = normalizeUrl(input.value);
         if (!url) {
           status.textContent = 'Invalid URL. Enter a valid http/https URL.';
           return;
         }
-        openPopupShell(url);
+        input.value = url.toString();
+        viewer.src = url.toString();
+        status.textContent = 'Force iframe requested.';
+      }
+
+      document.getElementById('goBtn').addEventListener('click', openSmart);
+      document.getElementById('tabBtn').addEventListener('click', () => {
+        const url = normalizeUrl(input.value);
+        if (!url) {
+          status.textContent = 'Invalid URL. Enter a valid http/https URL.';
+          return;
+        }
+        openTopLevel(url, false);
       });
+      document.getElementById('frameBtn').addEventListener('click', forceFrame);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') openSmart(); });
 
       viewer.addEventListener('load', () => {
-        clearTimeout(navTimer);
-        status.textContent = 'Loaded in isolated frame.';
+        status.textContent = 'Loaded in iframe (site allows embedding).';
       });
 
-      navigate();
+      openSmart();
     </script>
   </body>
 </html>
