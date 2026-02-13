@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Photos Redirect Launcher</title>
+    <style>
+      :root { font-family: Inter, Arial, sans-serif; color-scheme: light dark; }
+      body { margin: 0; background: #0f172a; color: #e2e8f0; }
+      .wrap { max-width: 900px; margin: 0 auto; padding: 24px; }
+      .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+      input {
+        flex: 1; min-width: 280px; padding: 12px;
+        border: 1px solid #334155; border-radius: 10px;
+        background: #1e293b; color: #e2e8f0;
+      }
+      button {
+        border: 0; border-radius: 10px; padding: 12px 14px;
+        font-weight: 600; cursor: pointer; color: #fff;
+      }
+      .primary { background: #2563eb; }
+      .secondary { background: #475569; }
+      .note { line-height: 1.5; color: #cbd5e1; }
+      .status { margin-top: 12px; color: #fbbf24; }
+      code { background: #1f2937; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Google Photos share URL opener</h1>
+      <p class="note">
+        You are correct: this kind of <code>photos.app.goo.gl</code> link typically redirects to another Google Photos URL,
+        and Google blocks reliable in-page iframe embedding for this flow. The only stable approach is
+        top-level navigation (same tab or new tab), which allows Google’s redirect chain to complete.
+      </p>
+
+      <div class="controls">
+        <input id="urlInput" type="url" value="https://photos.app.goo.gl/9pnB2PfT848SHpPd9" aria-label="Google Photos share URL" />
+        <button id="openSameTab" class="primary" type="button">Open in this tab (follow redirect)</button>
+        <button id="openNewTab" class="secondary" type="button">Open in new tab</button>
+      </div>
+
+      <p id="status" class="status">
+        This page intentionally does not use iframe embedding because Google may block it.
+      </p>
+    </main>
+
+    <script>
+      const input = document.getElementById('urlInput');
+      const status = document.getElementById('status');
+
+      function getValidUrl() {
+        const value = input.value.trim();
+        try {
+          const u = new URL(value);
+          if (u.protocol !== 'https:') throw new Error('Only HTTPS URLs are allowed.');
+          return u.toString();
+        } catch {
+          status.textContent = 'Please enter a valid HTTPS URL.';
+          return null;
+        }
+      }
+
+      document.getElementById('openSameTab').addEventListener('click', () => {
+        const url = getValidUrl();
+        if (!url) return;
+        status.textContent = 'Opening in this tab and letting Google redirect to the album...';
+        window.location.assign(url);
+      });
+
+      document.getElementById('openNewTab').addEventListener('click', () => {
+        const url = getValidUrl();
+        if (!url) return;
+        status.textContent = 'Opening in new tab...';
+        window.open(url, '_blank', 'noopener,noreferrer');
+      });
+    </script>
+  </body>
+</html>
