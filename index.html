@@ -3,35 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Isolated Browser Frame</title>
+    <title>Smart Isolated Browser</title>
     <style>
       :root { font-family: Inter, Arial, sans-serif; color-scheme: light dark; }
       * { box-sizing: border-box; }
       body { margin: 0; background: #0b1220; color: #e5e7eb; }
       .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
       .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 12px; }
-      .toolbar { display: grid; grid-template-columns: auto auto auto 1fr auto; gap: 8px; align-items: center; }
-      button {
-        border: 1px solid #334155; background: #1f2937; color: #e5e7eb;
-        border-radius: 8px; padding: 10px 12px; font-weight: 600; cursor: pointer;
-      }
+      .toolbar { display: grid; grid-template-columns: auto auto auto 1fr auto auto; gap: 8px; align-items: center; }
+      button { border: 1px solid #334155; background: #1f2937; color: #e5e7eb; border-radius: 8px; padding: 10px 12px; font-weight: 600; cursor: pointer; }
       button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-      input[type='url'] {
-        width: 100%; padding: 10px 12px; border-radius: 8px;
-        border: 1px solid #334155; background: #0f172a; color: #e5e7eb;
-      }
+      input[type='url'] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e5e7eb; }
       .status { margin: 10px 0 0; color: #fbbf24; font-size: 14px; line-height: 1.4; }
       .hint { margin: 12px 0 0; color: #cbd5e1; font-size: 14px; line-height: 1.5; }
-      .viewer { margin-top: 12px; }
-      iframe {
-        width: 100%; min-height: 78vh; border: 1px solid #334155; border-radius: 12px; background: #020617;
-      }
+      iframe { width: 100%; min-height: 78vh; border: 1px solid #334155; border-radius: 12px; background: #020617; margin-top: 12px; }
       code { background: #1f2937; padding: 2px 6px; border-radius: 6px; }
     </style>
   </head>
   <body>
     <main class="app">
-      <h1>Browser-in-browser (isolated frame mode)</h1>
+      <h1>Smart browser-in-browser (with fallback)</h1>
       <div class="panel">
         <div class="toolbar">
           <button id="backBtn" type="button">◀ Back</button>
@@ -39,28 +30,25 @@
           <button id="reloadBtn" type="button">↻ Reload</button>
           <input id="urlInput" type="url" value="https://photos.app.goo.gl/9pnB2PfT848SHpPd9" aria-label="URL" />
           <button id="goBtn" class="primary" type="button">Go</button>
+          <button id="popupBtn" type="button">Open popup shell</button>
         </div>
 
-        <p id="status" class="status">
-          Isolation is enabled: <code>sandbox</code> + <code>credentialless</code> + <code>no-referrer</code>.
-        </p>
+        <p id="status" class="status">Ready.</p>
 
         <p class="hint">
-          This is the strongest browser-native isolation available in normal web pages. It reduces session sharing with your main page,
-          but cannot guarantee a perfect "full incognito browser" clone for all sites. Some websites block iframe embedding
-          (via <code>X-Frame-Options</code> / <code>frame-ancestors</code>) or require top-level navigation.
+          This page now actively handles iframe blocking: it first tries isolated frame mode,
+          then auto-falls back to a popup shell when likely blocked. Isolation used: <code>sandbox</code> +
+          <code>credentialless</code> + <code>no-referrer</code>.
         </p>
 
-        <div class="viewer">
-          <iframe
-            id="viewer"
-            title="Isolated web viewer"
-            referrerpolicy="no-referrer"
-            loading="eager"
-            sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-top-navigation-by-user-activation"
-            credentialless
-          ></iframe>
-        </div>
+        <iframe
+          id="viewer"
+          title="Isolated web viewer"
+          referrerpolicy="no-referrer"
+          loading="eager"
+          sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-top-navigation-by-user-activation"
+          credentialless
+        ></iframe>
       </div>
     </main>
 
@@ -68,23 +56,42 @@
       const viewer = document.getElementById('viewer');
       const input = document.getElementById('urlInput');
       const status = document.getElementById('status');
+      let navTimer = null;
+      let lastUrl = '';
 
       function normalizeUrl(value) {
         const raw = value.trim();
         if (!raw) return null;
-
         try {
           const url = new URL(raw);
           if (!['http:', 'https:'].includes(url.protocol)) return null;
           return url.toString();
         } catch {
           try {
-            const url = new URL(`https://${raw}`);
-            return url.toString();
+            return new URL(`https://${raw}`).toString();
           } catch {
             return null;
           }
         }
+      }
+
+      function openPopupShell(url) {
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=1300,height=900');
+        if (!popup) {
+          status.textContent = 'Popup blocked by browser. Please allow popups and try again.';
+          return;
+        }
+
+        popup.document.write(`<!doctype html>
+<html><head><meta charset="utf-8"><title>Isolated popup shell</title>
+<style>body{margin:0;background:#0b1220;color:#e5e7eb;font-family:Inter,Arial,sans-serif}header{padding:10px 12px;background:#111827;border-bottom:1px solid #334155}iframe{width:100%;height:calc(100vh - 44px);border:0;background:#020617}code{background:#1f2937;padding:2px 6px;border-radius:6px}</style>
+</head><body>
+<header>Popup shell mode (isolated frame): <code>${url.replace(/</g, '&lt;')}</code></header>
+<iframe referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-top-navigation-by-user-activation" credentialless src="${url.replace(/"/g, '&quot;')}"></iframe>
+</body></html>`);
+        popup.document.close();
+
+        status.textContent = 'Opened popup shell fallback.';
       }
 
       function navigate() {
@@ -95,49 +102,51 @@
         }
 
         input.value = url;
+        lastUrl = url;
         viewer.src = url;
-        status.textContent = 'Navigating in isolated frame...';
+        status.textContent = 'Trying isolated frame...';
+
+        clearTimeout(navTimer);
+        navTimer = setTimeout(() => {
+          // If still not loaded after timeout, likely blocked/redirect loop/slow.
+          status.textContent = 'Likely blocked in iframe. Auto-switching to popup shell fallback...';
+          openPopupShell(url);
+        }, 4500);
       }
 
-      function wireControls() {
-        document.getElementById('goBtn').addEventListener('click', navigate);
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') navigate();
-        });
+      document.getElementById('goBtn').addEventListener('click', navigate);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') navigate(); });
 
-        document.getElementById('backBtn').addEventListener('click', () => {
-          try {
-            viewer.contentWindow.history.back();
-            status.textContent = 'Back requested.';
-          } catch {
-            status.textContent = 'Back not available for this site due to cross-origin isolation rules.';
-          }
-        });
-
-        document.getElementById('forwardBtn').addEventListener('click', () => {
-          try {
-            viewer.contentWindow.history.forward();
-            status.textContent = 'Forward requested.';
-          } catch {
-            status.textContent = 'Forward not available for this site due to cross-origin isolation rules.';
-          }
-        });
-
-        document.getElementById('reloadBtn').addEventListener('click', () => {
-          try {
-            viewer.contentWindow.location.reload();
-          } catch {
-            viewer.src = viewer.src;
-          }
-          status.textContent = 'Reload requested.';
-        });
-      }
-
-      viewer.addEventListener('load', () => {
-        status.textContent = 'Loaded in isolated frame (unless blocked by site embed policy).';
+      document.getElementById('backBtn').addEventListener('click', () => {
+        try { viewer.contentWindow.history.back(); status.textContent = 'Back requested.'; }
+        catch { status.textContent = 'Back unavailable cross-origin; use popup shell.'; }
       });
 
-      wireControls();
+      document.getElementById('forwardBtn').addEventListener('click', () => {
+        try { viewer.contentWindow.history.forward(); status.textContent = 'Forward requested.'; }
+        catch { status.textContent = 'Forward unavailable cross-origin; use popup shell.'; }
+      });
+
+      document.getElementById('reloadBtn').addEventListener('click', () => {
+        try { viewer.contentWindow.location.reload(); }
+        catch { if (lastUrl) viewer.src = lastUrl; }
+        status.textContent = 'Reload requested.';
+      });
+
+      document.getElementById('popupBtn').addEventListener('click', () => {
+        const url = normalizeUrl(input.value);
+        if (!url) {
+          status.textContent = 'Invalid URL. Enter a valid http/https URL.';
+          return;
+        }
+        openPopupShell(url);
+      });
+
+      viewer.addEventListener('load', () => {
+        clearTimeout(navTimer);
+        status.textContent = 'Loaded in isolated frame.';
+      });
+
       navigate();
     </script>
   </body>
