@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Browser Launcher</title>
+    <style>
+      :root { font-family: Inter, Arial, sans-serif; color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #0b1220; color: #e5e7eb; }
+      .app { max-width: 1100px; margin: 0 auto; padding: 16px; }
+      .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 12px; }
+      .toolbar { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; }
+      input[type='url'] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e5e7eb; }
+      button { border: 1px solid #334155; background: #1f2937; color: #e5e7eb; border-radius: 8px; padding: 10px 12px; font-weight: 600; cursor: pointer; }
+      button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+      .status { margin: 10px 0 0; color: #fbbf24; font-size: 14px; line-height: 1.4; }
+      .hint { margin: 12px 0 0; color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+      iframe { width: 100%; min-height: 74vh; border: 1px solid #334155; border-radius: 12px; background: #020617; margin-top: 12px; }
+      code { background: #1f2937; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <h1>Smart browser launcher (auto handles X-Frame-Options)</h1>
+      <div class="panel">
+        <div class="toolbar">
+          <input id="urlInput" type="url" value="https://photos.app.goo.gl/9pnB2PfT848SHpPd9" aria-label="URL" />
+          <button id="goBtn" class="primary" type="button">Open</button>
+          <button id="tabBtn" type="button">Open in new tab</button>
+          <button id="frameBtn" type="button">Force iframe</button>
+        </div>
+
+        <p id="status" class="status">Ready.</p>
+
+        <p class="hint">
+          If a site sends <code>X-Frame-Options: sameorigin</code> (like Google Photos share links), iframe loading is impossible.
+          This app now detects known blocked hosts and automatically uses top-level navigation so the URL actually opens.
+        </p>
+
+        <iframe
+          id="viewer"
+          title="Isolated web viewer"
+          referrerpolicy="no-referrer"
+          loading="eager"
+          sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-top-navigation-by-user-activation"
+          credentialless
+        ></iframe>
+      </div>
+    </main>
+
+    <script>
+      const viewer = document.getElementById('viewer');
+      const input = document.getElementById('urlInput');
+      const status = document.getElementById('status');
+
+      const knownFrameBlockedHosts = new Set([
+        'photos.app.goo.gl',
+        'photos.google.com',
+        'accounts.google.com'
+      ]);
+
+      function normalizeUrl(value) {
+        const raw = value.trim();
+        if (!raw) return null;
+        try {
+          const u = new URL(raw);
+          if (!['http:', 'https:'].includes(u.protocol)) return null;
+          return u;
+        } catch {
+          try {
+            return new URL(`https://${raw}`);
+          } catch {
+            return null;
+          }
+        }
+      }
+
+      function openTopLevel(url, sameTab = false) {
+        if (sameTab) {
+          status.textContent = 'Opening in this tab (real browser navigation with redirects).';
+          window.location.assign(url.toString());
+          return;
+        }
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        status.textContent = 'Opened in new tab using top-level navigation.';
+      }
+
+      function openSmart() {
+        const url = normalizeUrl(input.value);
+        if (!url) {
+          status.textContent = 'Invalid URL. Enter a valid http/https URL.';
+          return;
+        }
+
+        input.value = url.toString();
+
+        if (knownFrameBlockedHosts.has(url.hostname)) {
+          status.textContent = `${url.hostname} is frame-blocked; opening as real tab instead.`;
+          openTopLevel(url, false);
+          return;
+        }
+
+        viewer.src = url.toString();
+        status.textContent = 'Trying isolated iframe mode...';
+      }
+
+      function forceFrame() {
+        const url = normalizeUrl(input.value);
+        if (!url) {
+          status.textContent = 'Invalid URL. Enter a valid http/https URL.';
+          return;
+        }
+        input.value = url.toString();
+        viewer.src = url.toString();
+        status.textContent = 'Force iframe requested.';
+      }
+
+      document.getElementById('goBtn').addEventListener('click', openSmart);
+      document.getElementById('tabBtn').addEventListener('click', () => {
+        const url = normalizeUrl(input.value);
+        if (!url) {
+          status.textContent = 'Invalid URL. Enter a valid http/https URL.';
+          return;
+        }
+        openTopLevel(url, false);
+      });
+      document.getElementById('frameBtn').addEventListener('click', forceFrame);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') openSmart(); });
+
+      viewer.addEventListener('load', () => {
+        status.textContent = 'Loaded in iframe (site allows embedding).';
+      });
+
+      openSmart();
+    </script>
+  </body>
+</html>
