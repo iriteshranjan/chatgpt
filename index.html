@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Directory A–Z</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Indian Stocks Directory (A–Z)</h1>
+    <p>Browse stocks by first letter and view latest NSE/BSE prices.</p>
+  </header>
+
+  <main class="layout">
+    <aside class="letters-panel">
+      <h2>Letters</h2>
+      <div id="letters" class="letters-grid" aria-label="A to Z directory"></div>
+      <button id="refreshStocks" class="refresh-btn" type="button">Refresh A–Z Data</button>
+      <p id="stocksStatus" class="status" role="status"></p>
+    </aside>
+
+    <section class="stocks-panel">
+      <h2 id="selectedLetterHeading">Stocks</h2>
+      <input id="stockFilter" type="search" placeholder="Filter stock name..." aria-label="Filter stock name" />
+      <ul id="stocksList" class="stocks-list" aria-live="polite"></ul>
+    </section>
+
+    <section class="details-panel">
+      <h2>Latest Price</h2>
+      <article id="stockDetails" class="details-card">
+        <p>Select a stock to load NSE and BSE prices.</p>
+      </article>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
